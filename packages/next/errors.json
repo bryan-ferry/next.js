@@ -1467,5 +1467,7 @@
   "1466": "TypeScript %s does not provide the compiler API required by Next.js. Set %s to true in your Next.js config to use the TypeScript CLI, or install TypeScript 6 instead.",
   "1467": "TypeScript %s does not provide the compiler API required by Next.js. Set %s back to true in your Next.js config to use the TypeScript CLI, or install TypeScript 6 instead.",
   "1468": "Invariant: no direct app page entry found for %s",
-  "1469": "Invariant: dev virtual filesystem item was not handled by the development bundler"
+  "1469": "Invariant: dev virtual filesystem item was not handled by the development bundler",
+  "1470": "Invariant: dev server state can only be updated in dev",
+  "1471": "Invariant: no app initialized"
 }
