@@ -962,6 +962,8 @@ var moduleFactories = new Map();
 contextPrototype.M = moduleFactories;
 var availableModules = new Map();
 var availableModuleChunks = new Map();
+// HTTP-cached but not yet loaded; treated as cheaply available by the split-vs-whole heuristic.
+var httpCachedChunks = new Set();
 // Registry mapping a merged chunk's path to its constituent component chunk paths.
 var chunkComponents = new Map();
 // Registry mapping a component chunk's path to its size in bytes, used by the
@@ -974,6 +976,7 @@ function registerComponentChunkSizes(componentChunks, sizes) {
             componentChunkSizes.set(componentChunks[i], size);
         }
     }
+    scheduleChunkPreload();
 }
 // Memoizes the composite promise returned for a merged chunk loaded by URL, keyed by URL.
 var splitChunkPromises = new Map();
@@ -1094,6 +1097,7 @@ function loadChunkInternal(sourceType, sourceData, chunkData) {
  */ function loadComponentChunksOrWhole(sourceType, sourceData, componentChunks, chunkUrl) {
     var componentChunkPromises = [];
     var availableBytes = 0;
+    var availableCount = 0;
     var unavailableCount = 0;
     var _iteratorNormalCompletion = true, _didIteratorError = false, _iteratorError = undefined;
     try {
@@ -1104,6 +1108,12 @@ function loadChunkInternal(sourceType, sourceData, chunkData) {
                 var _componentChunkSizes_get;
                 componentChunkPromises.push(available);
                 availableBytes += (_componentChunkSizes_get = componentChunkSizes.get(componentChunk)) !== null && _componentChunkSizes_get !== void 0 ? _componentChunkSizes_get : 0;
+                availableCount++;
+            } else if (httpCachedChunks.has(componentChunk)) {
+                var _componentChunkSizes_get1;
+                // Disk-cached: count bytes as available, not request cost.
+                availableBytes += (_componentChunkSizes_get1 = componentChunkSizes.get(componentChunk)) !== null && _componentChunkSizes_get1 !== void 0 ? _componentChunkSizes_get1 : 0;
+                availableCount++;
             } else {
                 unavailableCount++;
             }
@@ -1122,11 +1132,12 @@ function loadChunkInternal(sourceType, sourceData, chunkData) {
             }
         }
     }
-    if (componentChunkPromises.length > 0 && shouldLoadComponentChunks(availableBytes, unavailableCount)) {
+    // Components missing but the whole merged chunk is cached: one cached request beats N fetches.
+    var wholeChunkCached = unavailableCount > 0 && httpCachedChunks.has(chunkUrlToPath(chunkUrl));
+    if (!wholeChunkCached && availableCount > 0 && shouldLoadComponentChunks(availableBytes, unavailableCount)) {
         var _iteratorNormalCompletion1 = true, _didIteratorError1 = false, _iteratorError1 = undefined;
         try {
-            // Enough component chunks are already loaded or loading that splitting saves more
-            // bytes than the extra requests cost.
+            // Enough is loaded or disk-cached that splitting beats the extra requests.
             for(var _iterator1 = componentChunks[Symbol.iterator](), _step1; !(_iteratorNormalCompletion1 = (_step1 = _iterator1.next()).done); _iteratorNormalCompletion1 = true){
                 var componentChunk1 = _step1.value;
                 if (!availableModuleChunks.has(componentChunk1)) {
@@ -1177,6 +1188,214 @@ function loadChunkInternal(sourceType, sourceData, chunkData) {
         }
     }
     return promise1;
+}
+// --- Background preload of disk-cached component chunks ---
+var chunkPreloadScheduled = false;
+/** Schedules a one-time idle pass that records (not loads) HTTP-cached manifest chunks. */ function scheduleChunkPreload() {
+    if (chunkPreloadScheduled) return;
+    // only-if-cached needs a DOM document and fetch.
+    var g = globalThis;
+    if (typeof g.document === 'undefined' || typeof g.fetch !== 'function') {
+        return;
+    }
+    chunkPreloadScheduled = true;
+    // only-if-cached is same-origin only; skip CDN assets.
+    if (!chunkAssetsAreSameOrigin(g)) {
+        return;
+    }
+    var start = function start() {
+        void probeCachedChunks();
+    };
+    if (typeof g.requestIdleCallback === 'function') {
+        g.requestIdleCallback(start);
+    } else {
+        setTimeout(start, 1000);
+    }
+}
+/** App-wide chunk list from `__TURBOPACK_CHUNK_PRELOAD_URL` (mixed URLs and paths); [] on failure. */ function fetchChunkPreloadManifest() {
+    return _async_to_generator(function() {
+        var url, response, unused;
+        return _ts_generator(this, function(_state) {
+            switch(_state.label){
+                case 0:
+                    url = globalThis.__TURBOPACK_CHUNK_PRELOAD_URL;
+                    if (!url) return [
+                        2,
+                        []
+                    ];
+                    _state.label = 1;
+                case 1:
+                    _state.trys.push([
+                        1,
+                        4,
+                        ,
+                        5
+                    ]);
+                    return [
+                        4,
+                        fetch(url)
+                    ];
+                case 2:
+                    response = _state.sent();
+                    if (!response.ok) return [
+                        2,
+                        []
+                    ];
+                    return [
+                        4,
+                        response.json()
+                    ];
+                case 3:
+                    return [
+                        2,
+                        _state.sent()
+                    ];
+                case 4:
+                    unused = _state.sent();
+                    return [
+                        2,
+                        []
+                    ];
+                case 5:
+                    return [
+                        2
+                    ];
+            }
+        });
+    })();
+}
+/** Records (without loading) manifest chunks found in the HTTP cache. */ function probeCachedChunks() {
+    return _async_to_generator(function() {
+        var chunks, _iteratorNormalCompletion, _didIteratorError, _iteratorError, _iterator, _step, chunk, chunkPath, err;
+        return _ts_generator(this, function(_state) {
+            switch(_state.label){
+                case 0:
+                    return [
+                        4,
+                        fetchChunkPreloadManifest()
+                    ];
+                case 1:
+                    chunks = _state.sent();
+                    _iteratorNormalCompletion = true, _didIteratorError = false, _iteratorError = undefined;
+                    _state.label = 2;
+                case 2:
+                    _state.trys.push([
+                        2,
+                        7,
+                        8,
+                        9
+                    ]);
+                    _iterator = chunks[Symbol.iterator]();
+                    _state.label = 3;
+                case 3:
+                    if (!!(_iteratorNormalCompletion = (_step = _iterator.next()).done)) return [
+                        3,
+                        6
+                    ];
+                    chunk = _step.value;
+                    // Normalize URL-or-path entries to the path keys the loader checks.
+                    chunkPath = chunkUrlToPath(chunk);
+                    if (availableModuleChunks.has(chunkPath) || httpCachedChunks.has(chunkPath)) {
+                        return [
+                            3,
+                            5
+                        ];
+                    }
+                    return [
+                        4,
+                        isChunkInHttpCache(getChunkRelativeUrl(chunkPath))
+                    ];
+                case 4:
+                    if (_state.sent()) {
+                        httpCachedChunks.add(chunkPath);
+                    }
+                    _state.label = 5;
+                case 5:
+                    _iteratorNormalCompletion = true;
+                    return [
+                        3,
+                        3
+                    ];
+                case 6:
+                    return [
+                        3,
+                        9
+                    ];
+                case 7:
+                    err = _state.sent();
+                    _didIteratorError = true;
+                    _iteratorError = err;
+                    return [
+                        3,
+                        9
+                    ];
+                case 8:
+                    try {
+                        if (!_iteratorNormalCompletion && _iterator.return != null) {
+                            _iterator.return();
+                        }
+                    } finally{
+                        if (_didIteratorError) {
+                            throw _iteratorError;
+                        }
+                    }
+                    return [
+                        7
+                    ];
+                case 9:
+                    return [
+                        2
+                    ];
+            }
+        });
+    })();
+}
+/** Whether `url` is in the HTTP cache; only-if-cached serves a cached response or errors on a miss. */ function isChunkInHttpCache(url) {
+    return _async_to_generator(function() {
+        var response, unused;
+        return _ts_generator(this, function(_state) {
+            switch(_state.label){
+                case 0:
+                    _state.trys.push([
+                        0,
+                        2,
+                        ,
+                        3
+                    ]);
+                    return [
+                        4,
+                        fetch(url, {
+                            method: 'GET',
+                            mode: 'same-origin',
+                            cache: 'only-if-cached'
+                        })
+                    ];
+                case 1:
+                    response = _state.sent();
+                    return [
+                        2,
+                        response.ok
+                    ];
+                case 2:
+                    unused = _state.sent();
+                    return [
+                        2,
+                        false
+                    ];
+                case 3:
+                    return [
+                        2
+                    ];
+            }
+        });
+    })();
+}
+/** Whether chunk assets resolve to the document's origin (CHUNK_BASE_PATH may be a CDN URL). */ function chunkAssetsAreSameOrigin(g) {
+    try {
+        return new URL(CHUNK_BASE_PATH, g.location.href).origin === g.location.origin;
+    } catch (unused) {
+        return false;
+    }
 }
 var loadedChunk = Promise.resolve(undefined);
 var instrumentedBackendLoadChunks = new WeakMap();
