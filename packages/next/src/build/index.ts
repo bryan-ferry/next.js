@@ -2993,31 +2993,17 @@ export default async function build(
           dynamicRoutes: { [route: string]: DynamicPrerenderManifestRoute }
         }
       >()
-      function addPrerenderRoute(
-        page: string,
-        routeKey: string,
-        route: PrerenderManifestRoute
+      function getPrerenderRoutesEntry(
+        pageType: 'app' | 'pages',
+        outputPath: string
       ) {
-        page = path.join(appPageKeys.has(page) ? 'app' : 'pages', page, '/page')
-        let entry = prerenderRoutes.get(page)
+        outputPath = path.posix.join(pageType, outputPath)
+        let entry = prerenderRoutes.get(outputPath)
         if (!entry) {
           entry = { routes: {}, dynamicRoutes: {} }
-          prerenderRoutes.set(page, entry)
+          prerenderRoutes.set(outputPath, entry)
         }
-        entry.routes[routeKey] = route
-      }
-      function addPrerenderDynamicRoute(
-        page: string,
-        routeKey: string,
-        route: DynamicPrerenderManifestRoute
-      ) {
-        page = path.join(appPageKeys.has(page) ? 'app' : 'pages', page, '/page')
-        let entry = prerenderRoutes.get(page)
-        if (!entry) {
-          entry = { routes: {}, dynamicRoutes: {} }
-          prerenderRoutes.set(page, entry)
-        }
-        entry.dynamicRoutes[routeKey] = route
+        return entry
       }
 
       // Accumulate per-route segment inlining decisions for
@@ -3576,7 +3562,9 @@ export default async function build(
                   }
                 }
 
-                addPrerenderRoute(page, route.pathname, {
+                getPrerenderRoutesEntry('app', originalAppPath).routes[
+                  route.pathname
+                ] = {
                   initialStatus: status,
                   initialHeaders: meta.headers,
                   renderingMode: isAppPPREnabled
@@ -3593,7 +3581,7 @@ export default async function build(
                   dataRoute,
                   prefetchDataRoute,
                   allowHeader: ALLOWED_HEADERS,
-                })
+                }
               } else {
                 hasRevalidateZero = true
 
@@ -3829,7 +3817,9 @@ export default async function build(
                   }
                 }
 
-                addPrerenderDynamicRoute(page, route.pathname, {
+                getPrerenderRoutesEntry('app', originalAppPath).dynamicRoutes[
+                  route.pathname
+                ] = {
                   experimentalPPR: isRoutePPREnabled,
                   remainingPrerenderableParams:
                     route.remainingPrerenderableParams,
@@ -3880,7 +3870,7 @@ export default async function build(
                         }).re.source
                       ),
                   allowHeader: ALLOWED_HEADERS,
-                })
+                }
               }
             }
           })
@@ -4106,25 +4096,26 @@ export default async function build(
 
                     const cacheControl = getCacheControl(localePage)
 
-                    addPrerenderRoute(file, localePage, {
-                      ...(!isNotFoundTrue && {
-                        routeType: 'page' as const,
-                        response: 'complete' as const,
-                        compute: 'static' as const,
-                      }),
-                      initialRevalidateSeconds: cacheControl.revalidate,
-                      initialExpireSeconds: cacheControl.expire,
-                      experimentalPPR: undefined,
-                      renderingMode: undefined,
-                      srcRoute: null,
-                      dataRoute: path.posix.join(
-                        '/_next/data',
-                        buildId,
-                        `${localePage}.json`
-                      ),
-                      prefetchDataRoute: undefined,
-                      allowHeader: ALLOWED_HEADERS,
-                    })
+                    getPrerenderRoutesEntry('pages', file).routes[localePage] =
+                      {
+                        ...(!isNotFoundTrue && {
+                          routeType: 'page' as const,
+                          response: 'complete' as const,
+                          compute: 'static' as const,
+                        }),
+                        initialRevalidateSeconds: cacheControl.revalidate,
+                        initialExpireSeconds: cacheControl.expire,
+                        experimentalPPR: undefined,
+                        renderingMode: undefined,
+                        srcRoute: null,
+                        dataRoute: path.posix.join(
+                          '/_next/data',
+                          buildId,
+                          `${localePage}.json`
+                        ),
+                        prefetchDataRoute: undefined,
+                        allowHeader: ALLOWED_HEADERS,
+                      }
                   }
                 } else {
                   const isNotFoundTrue = notFoundRoutes.includes(page)
@@ -4134,7 +4125,7 @@ export default async function build(
 
                   const cacheControl = getCacheControl(page)
 
-                  addPrerenderRoute(file, page, {
+                  getPrerenderRoutesEntry('pages', file).routes[page] = {
                     ...(!isNotFoundTrue && {
                       routeType: 'page' as const,
                       response: 'complete' as const,
@@ -4153,7 +4144,7 @@ export default async function build(
                     // Pages does not have a prefetch data route.
                     prefetchDataRoute: undefined,
                     allowHeader: ALLOWED_HEADERS,
-                  })
+                  }
                 }
                 if (pageInfo) {
                   pageInfo.initialCacheControl = getCacheControl(page)
@@ -4172,7 +4163,9 @@ export default async function build(
 
                   const cacheControl = getCacheControl(route.pathname)
 
-                  addPrerenderRoute(file, route.pathname, {
+                  getPrerenderRoutesEntry('pages', file).routes[
+                    route.pathname
+                  ] = {
                     ...(!isNotFoundTrue && {
                       routeType: 'page' as const,
                       response: 'complete' as const,
@@ -4191,7 +4184,7 @@ export default async function build(
                     // Pages does not have a prefetch data route.
                     prefetchDataRoute: undefined,
                     allowHeader: ALLOWED_HEADERS,
-                  })
+                  }
 
                   if (pageInfo) {
                     pageInfo.initialCacheControl = cacheControl
@@ -4308,7 +4301,9 @@ export default async function build(
             fallback = `${normalizedRoute}.html`
           }
 
-          addPrerenderDynamicRoute(normalizedRoute, tbdRoute, {
+          getPrerenderRoutesEntry('pages', normalizedRoute).dynamicRoutes[
+            tbdRoute
+          ] = {
             routeRegex: normalizeRouteRegex(
               getNamedRouteRegex(tbdRoute, {
                 prefixRouteKeys: false,
@@ -4335,7 +4330,7 @@ export default async function build(
             prefetchDataRoute: undefined,
             prefetchDataRouteRegex: undefined,
             allowHeader: ALLOWED_HEADERS,
-          })
+          }
         })
       }
 
