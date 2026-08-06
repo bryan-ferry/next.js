@@ -3008,7 +3008,7 @@ export default async function build(
             outputPath.endsWith('/page') ? '/page' : '/route'
           )
         } else {
-          outputPath = path.posix.join('pages', outputPath)
+          outputPath = path.posix.join('pages', normalizePagePath(outputPath))
         }
         let entry = prerenderRoutes.get(outputPath)
         if (!entry) {
